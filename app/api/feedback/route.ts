@@ -81,33 +81,25 @@ export async function POST(request: Request) {
 
   // --- Resendでメール通知 ---
   let mailSent = false;
+  let mailError = null;
 
   if (!resendApiKey || !feedbackToEmail || !feedbackFromEmail) {
-    console.warn('⚠️ メール環境変数が未設定のためスキップ:', {
-      RESEND_API_KEY: resendApiKey ? '設定済み' : '未設定',
-      FEEDBACK_TO_EMAIL: feedbackToEmail ? '設定済み' : '未設定',
-      FEEDBACK_FROM_EMAIL: feedbackFromEmail ? '設定済み' : '未設定',
-    });
+    console.warn('⚠️ メール環境変数が未設定のためスキップ');
   } else {
     try {
       const resend = new Resend(resendApiKey);
-
-      const adminUrl = appBaseUrl
-        ? `${appBaseUrl}/admin/feedback`
-        : '/admin/feedback';
-
+      const adminUrl = appBaseUrl ? `${appBaseUrl}/admin/feedback` : '/admin/feedback';
       const createdAt = data?.created_at
         ? new Date(data.created_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
         : new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
 
-      const { error: mailError } = await resend.emails.send({
+      const { error: resendError } = await resend.emails.send({
         from: feedbackFromEmail,
         to: feedbackToEmail,
-        subject: '[面接くん] 新しいフィードバックが届きました',
+        subject: '[面接くん] 新しいフィードバック',
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #3b82f6;">📬 新しいフィードバック</h2>
-            
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
               <tr>
                 <td style="padding: 8px; background: #f3f4f6; font-weight: bold; width: 120px;">受信日時</td>
@@ -122,37 +114,35 @@ export async function POST(request: Request) {
                 <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${email?.trim() || '未入力'}</td>
               </tr>
             </table>
-
             <h3 style="color: #1f2937;">メッセージ</h3>
-            <div style="background: #f9fafb; border-left: 4px solid #3b82f6; padding: 16px; margin-bottom: 24px; white-space: pre-wrap; font-size: 15px; line-height: 1.6;">
+            <div style="background: #f9fafb; border-left: 4px solid #3b82f6; padding: 16px; margin-bottom: 24px; white-space: pre-wrap;">
               ${message.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;')}
             </div>
-
             <a href="${adminUrl}" style="display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
               管理画面で確認する →
             </a>
-
-            <p style="color: #9ca3af; font-size: 12px; margin-top: 24px;">
-              このメールは 面接くん のフィードバック機能から自動送信されました。
-            </p>
           </div>
         `,
       });
 
-      if (mailError) {
-        console.error('❌ Resendメール送信エラー:', mailError);
+      if (resendError) {
+        console.error('❌ Resendエラー:', resendError);
+        mailError = resendError;
       } else {
         console.log('✅ メール送信成功');
         mailSent = true;
       }
-    } catch (mailException: any) {
-      console.error('❌ Resend例外:', mailException);
+    } catch (e: any) {
+      console.error('❌ Resend例外:', e);
+      mailError = e.message;
     }
   }
 
+  // DB保存が成功していれば必ず200を返す
   return NextResponse.json({
     ok: true,
     saved: true,
     mailSent,
+    ...(mailError && { mailError: String(mailError) }),
   });
 }
