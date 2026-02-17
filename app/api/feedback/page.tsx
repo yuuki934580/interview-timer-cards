@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Feedback {
   id: string;
   message: string;
-  email: string;
-  page: string;
-  userAgent: string;
-  createdAt: string;
+  email: string | null;
+  page: string | null;
+  user_agent: string | null;
+  created_at: string;
 }
 
 export default function AdminFeedbackPage() {
@@ -17,48 +17,64 @@ export default function AdminFeedbackPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const ADMIN_PASSWORD = 'admin123'; // 簡易パスワード
-
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      loadFeedbacks();
-    } else {
-      setError('パスワードが正しくありません');
+    try {
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+
+      if (response.ok) {
+        setIsAuthenticated(true);
+        loadFeedbacks();
+      } else {
+        setError('パスワードが正しくありません');
+      }
+    } catch {
+      setError('ログインに失敗しました');
     }
   };
 
-  const loadFeedbacks = () => {
+  const loadFeedbacks = async () => {
+    setLoading(true);
     try {
-      const data = localStorage.getItem('feedbacks');
-      if (data) {
-        const parsed: Feedback[] = JSON.parse(data);
-        // 新しい順に並び替え
-        parsed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setFeedbacks(parsed);
+      const response = await fetch('/api/admin/feedbacks');
+      if (response.ok) {
+        const data = await response.json();
+        setFeedbacks(data);
+      } else {
+        const err = await response.json();
+        console.error('フィードバック取得エラー:', err);
       }
     } catch (err) {
-      console.error('フィードバック読み込みエラー:', err);
+      console.error('フィードバック取得失敗:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString('ja-JP');
+    return date.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
   };
 
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white p-6 flex items-center justify-center">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
-          <h1 className="text-2xl font-bold text-gray-800 mb-6 text-center">
-            管理画面ログイン
+          <h1 className="text-2xl font-bold text-gray-800 mb-2 text-center">
+            管理画面
           </h1>
+          <p className="text-sm text-gray-500 text-center mb-6">
+            面接くん フィードバック管理
+          </p>
           <form onSubmit={handleLogin}>
             <div className="mb-4">
               <label className="block text-sm text-gray-700 mb-2">
@@ -71,11 +87,12 @@ export default function AdminFeedbackPage() {
                 className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800 bg-white"
                 required
                 autoFocus
-                placeholder="admin123"
               />
             </div>
             {error && (
-              <div className="mb-4 text-red-600 text-sm">{error}</div>
+              <div className="mb-4 text-red-600 text-sm bg-red-50 p-3 rounded-lg">
+                {error}
+              </div>
             )}
             <button
               type="submit"
@@ -91,28 +108,35 @@ export default function AdminFeedbackPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white p-6">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">
-            フィードバック一覧
-          </h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">
+              フィードバック一覧
+            </h1>
+            <p className="text-sm text-gray-500">
+              {feedbacks.length}件
+            </p>
+          </div>
           <div className="flex gap-3">
             <button
               onClick={loadFeedbacks}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"
             >
-              更新
+              🔄 更新
             </button>
             <button
               onClick={() => router.push('/')}
-              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm"
             >
-              ホームへ
+              ← ホームへ
             </button>
           </div>
         </div>
 
-        {feedbacks.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-12 text-gray-500">読み込み中...</div>
+        ) : feedbacks.length === 0 ? (
           <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-500">
             フィードバックはまだありません
           </div>
@@ -122,21 +146,21 @@ export default function AdminFeedbackPage() {
               <div key={feedback.id} className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
-                    <div className="text-sm text-gray-500 mb-2">
-                      {formatDate(feedback.createdAt)}
+                    <div className="text-sm text-gray-500 mb-1">
+                      📅 {formatDate(feedback.created_at)}
                     </div>
                     {feedback.page && (
                       <div className="text-xs text-gray-400 mb-2">
-                        ページ: {feedback.page}
+                        📍 {feedback.page}
                       </div>
                     )}
                   </div>
                   {feedback.email && (
                     <a
                       href={`mailto:${feedback.email}`}
-                      className="text-sm text-blue-600 hover:underline"
+                      className="text-sm text-blue-600 hover:underline ml-4"
                     >
-                      {feedback.email}
+                      ✉️ {feedback.email}
                     </a>
                   )}
                 </div>
@@ -147,9 +171,9 @@ export default function AdminFeedbackPage() {
                   </div>
                 </div>
 
-                {feedback.userAgent && (
-                  <div className="text-xs text-gray-400 border-t pt-2">
-                    {feedback.userAgent}
+                {feedback.user_agent && (
+                  <div className="text-xs text-gray-400 border-t pt-2 truncate">
+                    {feedback.user_agent}
                   </div>
                 )}
               </div>

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 
 export default function FeedbackButton() {
   const [isOpen, setIsOpen] = useState(false);
@@ -14,19 +13,48 @@ export default function FeedbackButton() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    console.log('=== フィードバック送信開始 ===');
+    
+    if (!message.trim()) {
+      console.log('エラー: メッセージが空です');
+      return;
+    }
 
     setIsSubmitting(true);
 
     try {
-      const { error } = await supabase.from('feedback').insert({
-        message: message.trim(),
-        email: email.trim() || null,
-        page: pathname,
-        user_agent: navigator.userAgent,
+      console.log('API /api/feedback にPOST中...');
+      
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message.trim(),
+          email: email.trim() || null,
+          page: pathname,
+          user_agent: navigator.userAgent,
+        }),
       });
 
-      if (error) throw error;
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        console.error('❌ API送信エラー:', result);
+        
+        let errorMessage = 'フィードバックの送信に失敗しました。\n\n';
+        errorMessage += `エラー: ${result.error}\n`;
+        if (result.hint) {
+          errorMessage += `ヒント: ${result.hint}\n`;
+        }
+        errorMessage += '\n管理者に連絡してください。';
+        
+        alert(errorMessage);
+        return;
+      }
+
+      console.log('✅ フィードバック送信成功:', result);
 
       setSubmitted(true);
       setTimeout(() => {
@@ -35,11 +63,12 @@ export default function FeedbackButton() {
         setEmail('');
         setSubmitted(false);
       }, 2000);
-    } catch (error) {
-      console.error('Error submitting feedback:', error);
-      alert('送信に失敗しました。もう一度お試しください。');
+    } catch (error: any) {
+      console.error('❌ 送信失敗:', error);
+      alert(`送信に失敗しました。\n\nエラー: ${error.message}\n\nコンソールで詳細を確認してください。`);
     } finally {
       setIsSubmitting(false);
+      console.log('=== フィードバック送信終了 ===');
     }
   };
 
@@ -71,9 +100,14 @@ export default function FeedbackButton() {
             ) : (
               <>
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-800">
-                    フィードバック
-                  </h2>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800">
+                      フィードバック
+                    </h2>
+                    <p className="text-xs text-gray-500 mt-1">
+                      データはSupabaseに保存されます
+                    </p>
+                  </div>
                   <button
                     onClick={() => setIsOpen(false)}
                     className="text-gray-500 hover:text-gray-700 text-2xl"
